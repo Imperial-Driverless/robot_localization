@@ -1836,7 +1836,7 @@ void RosFilter<T>::loadParams()
     }
   }
 
-  auto load_covariance = [this](const std::string & parameter, Eigen::MatrixXd & covariance)
+  auto load_covariance = [this](const std::string & parameter, Eigen::MatrixXd & covariance, std::function<void(const Eigen::MatrixXd &)> setter)
     {
       covariance.setZero();
       std::vector<double> covar_flat;
@@ -1857,16 +1857,15 @@ void RosFilter<T>::loadParams()
           RCLCPP_FATAL_STREAM(get_logger(), error);
           throw std::invalid_argument(error);
         }
+        setter(covariance);
       }
     };
 
-  load_covariance("process_noise_covariance", process_noise_covariance_);
+  load_covariance("process_noise_covariance", process_noise_covariance_, std::bind(&T::setProcessNoiseCovariance, filter_, std::placeholders::_1));
   RF_DEBUG("Process noise covariance is:\n" << process_noise_covariance_ << "\n");
-  filter_.setProcessNoiseCovariance(process_noise_covariance_);
 
-  load_covariance("initial_estimate_covariance", initial_estimate_error_covariance_);
+  load_covariance("initial_estimate_covariance", initial_estimate_error_covariance_, std::bind(&T::setEstimateErrorCovariance, filter_, std::placeholders::_1));
   RF_DEBUG("Initial estimate covariance is:\n" << initial_estimate_error_covariance_ << "\n");
-  filter_.setEstimateErrorCovariance(initial_estimate_error_covariance_);
 }
 
 template<typename T>
@@ -2042,6 +2041,19 @@ void RosFilter<T>::initialize()
     shared_from_this());
 
   loadParams();
+
+  std::shared_ptr<rcl_jump_threshold_t> threshold = std::make_shared<rcl_jump_threshold_t>();
+  threshold->on_clock_change = true;
+  threshold->min_forward = { RCL_S_TO_NS(1) }; // make any time jump of more than 1s reset the filter
+  threshold->min_backward = { RCL_S_TO_NS(-1) };
+  time_jump_handler_ = get_clock()->create_jump_callback(nullptr, 
+    [this](const rcl_time_jump_t &) {
+      if (reset_on_time_jump_)
+      {
+        RCLCPP_INFO(get_logger(), "Time jump detected. Resetting filter.");
+        this->reset();
+      }
+    }, *threshold);
 
   if (print_diagnostics_) {
     diagnostic_updater_->add(

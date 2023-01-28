@@ -837,6 +837,10 @@ protected:
   //!
   std::unique_ptr<diagnostic_updater::HeaderlessTopicDiagnostic> freq_diag_;
 
+  //! @brief optional time jump handler
+  //!
+  rclcpp::JumpHandler::SharedPtr time_jump_handler_;
+
   //! @brief minimum frequency threshold for frequency diagnostic
   //! Must be on heap since pointer is passed to diagnostic_updater::FrequencyStatusParam
   //!
